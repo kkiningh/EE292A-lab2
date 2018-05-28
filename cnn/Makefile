@@ -80,6 +80,13 @@ $(TARGET_DIR)/$(TARGET) : Makefile $(SRCS) $(INCS) $(TARGET_DIR)
 
 $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)
+
+# Make opencl device code
+.PHONY: device
+device: $(TARGET_DIR)/cnn_emu.aocx
+	
+$(TARGET_DIR)/cnn_emu.aocx: device/cnn.cl
+	aoc -march=emulator -v -board-package=$(INTELFPGAOCLSDKROOT)/board/s5_ref $^ -o $@
 	
 # Standard make targets
 clean :
