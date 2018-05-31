@@ -68,7 +68,7 @@ SRCS := $(wildcard host/src/*.cpp ../common/src/AOCLUtils/*.cpp ../shared/*.cpp)
 LIBS := rt pthread
 
 # Make it all!
-all : $(TARGET_DIR)/$(TARGET)
+all : $(TARGET_DIR)/$(TARGET) device
 
 # Host executable target.
 $(TARGET_DIR)/$(TARGET) : Makefile $(SRCS) $(INCS) $(TARGET_DIR)

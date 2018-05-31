@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
   }
 
   // TODO: Uncomment this to verify on a smaller set of examples
-  // n_items = 100;
+  n_items = 1;
   
   // Initializing OpenCL and the kernels.
   output_guesses = (cl_uchar*)alignedMalloc(sizeof(cl_uchar) * n_items);
@@ -129,14 +129,14 @@ int main(int argc, char **argv) {
   dense2_bias = (cl_float*)alignedMalloc(sizeof(cl_float) * DENSE2_BIAS);
   
   // TODO: Read in weights from weights files
-  read_weights("bin/weights/conv1_weights", conv1_weights, CONV1_WEIGHTS);
-  read_weights("bin/weights/conv1_bias", conv1_bias, CONV1_BIAS);
-  read_weights("bin/weights/conv2_weights", conv2_weights, CONV2_WEIGHTS);
-  read_weights("bin/weights/conv2_bias", conv2_bias, CONV2_BIAS);
-  read_weights("bin/weights/dense1_weights", dense1_weights, DENSE1_WEIGHTS);
-  read_weights("bin/weights/dense1_bias", dense1_bias, DENSE1_BIAS);
-  read_weights("bin/weights/dense2_weights", dense2_weights, DENSE2_WEIGHTS);
-  read_weights("bin/weights/dense2_bias", dense2_bias, DENSE2_BIAS);
+  read_weights("weights/conv1_weights", conv1_weights, CONV1_WEIGHTS);
+  read_weights("weights/conv1_bias", conv1_bias, CONV1_BIAS);
+  read_weights("weights/conv2_weights", conv2_weights, CONV2_WEIGHTS);
+  read_weights("weights/conv2_bias", conv2_bias, CONV2_BIAS);
+  read_weights("weights/dense1_weights", dense1_weights, DENSE1_WEIGHTS);
+  read_weights("weights/dense1_bias", dense1_bias, DENSE1_BIAS);
+  read_weights("weights/dense2_weights", dense2_weights, DENSE2_WEIGHTS);
+  read_weights("weights/dense2_bias", dense2_bias, DENSE2_BIAS);
   
   initCL();
 
@@ -274,7 +274,8 @@ void classify() {
 
   
   // Enqueue the kernel. //
-  status = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_work_size, NULL, 0, NULL, &event);
+  status = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_work_size,
+      NULL, 0, NULL, &event);
   checkError(status, "Error: failed to launch data_in");
   
   // Wait for command queue to complete pending events.
@@ -286,7 +287,8 @@ void classify() {
   clReleaseEvent(event);
   
   // Read output buffer from kernel.
-  status = clEnqueueReadBuffer(queue, output_guesses_buffer, CL_TRUE, 0, sizeof(unsigned char) * n_items, output_guesses, 0, NULL, NULL);
+  status = clEnqueueReadBuffer(queue, output_guesses_buffer, CL_TRUE, 0,
+      sizeof(unsigned char) * n_items, output_guesses, 0, NULL, NULL);
   checkError(status, "Error: could not copy data from device");
 }
 

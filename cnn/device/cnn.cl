@@ -1,6 +1,3 @@
-//#include <math.h>
-
-// TODO: Define any constants you'll need
 // image is a 28x28xN array (N images) of bytes (each pixel is 8 bit grayscale)
 #define IMG_WIDTH 28
 #define IMG_HEIGHT 28
@@ -23,16 +20,14 @@
 #define MAXPOOL1_INPUT_CHANNELS 32
 #define MAXPOOL1_INPUT (28 * 28 * 32)
 
-#define CONV2_INPUT_WIDTH 14
-#define CONV2_INPUT_HEIGHT 14
+#define CONV2_INPUT_WIDTH 18
+#define CONV2_INPUT_HEIGHT 18
 #define CONV2_INPUT_CHANNELS 32
-#define CONV2_INPUT (14 * 14 * 32)
+#define CONV2_INPUT (18 * 18 * 32)
 
 #define CONV2_FILTER_WIDTH 5
 #define CONV2_FILTER_HEIGHT 5
 #define CONV2_FILTER_CHANNELS 64
-#define CONV2_INPUT \
-    (CONV2_INPUT_WIDTH * CONV2_INPUT_HEIGHT * CONV2_INPUT_CHANNELS)
 
 #define MAXPOOL2_INPUT_WIDTH 14
 #define MAXPOOL2_INPUT_HEIGHT 14
@@ -98,23 +93,29 @@ void conv_layer(
     const int filter_height,
     const int filter_channels
 ) {
-  for (int w = 0; w < input_width; w++) {
-    for (int h = 0; h < input_height; h++) {
+  const int OW = input_width - filter_width + 1;
+  const int OH = input_height - filter_height + 1;
+
+  for (int w = 0; w < OW; w++) {
+    for (int h = 0; h < OH; h++) {
       for (int f = 0; f < filter_channels; f++) {
         float sum = 0;
         for (int c = 0; c < input_channels; c++) {
           for (int ww = 0; ww < filter_width; ww++) {
             for (int hh = 0; hh < filter_height; hh++) {
+              printf("%d, %d, %d, %d, %d, %d\n", w, h, f, c, ww, hh);
               sum += inputs[c * input_width * input_height + h * input_width + w + hh
                 * filter_width + ww] * weights[f * c * filter_width 
                 * filter_height + c * filter_height * filter_width + hh 
                 * filter_width + ww];
             }
           }
+
           sum += bias[f * c * filter_width * filter_height + c
             * filter_height * filter_width];
         }
-        outputs[input_width * input_height * f + input_width * h + w] = sum;
+        printf("conv\n");
+        outputs[OW * OH * f + OW * h + w] = sum;
       }
     }  
   }
@@ -201,17 +202,20 @@ void pad_layer(
             && h < input_height + pad_height) {
           const int ih = h - pad_height;
           const int iw = w - pad_width;
-          outputs[o_idx] =  inputs[ih * input_width + iw];
+          const int i_idx = ih * input_width + iw;
+          outputs[o_idx] =  inputs[i_idx];
         } else {
           outputs[o_idx] = 0;
         }
       }
     }
   }
+
+  printf("Maxpool done\n");
 }
 
-// TODO: Build a CNN!
-__attribute__((reqd_work_group_size(10000,1,1))) // change this to change workgroup size
+// first argument
+__attribute__((reqd_work_group_size(1,1,1))) // change this to change workgroup size
 __kernel void linear_classifier(global const unsigned char * restrict images, 
         constant float * restrict conv1_weights,
         constant float * restrict conv1_bias,
@@ -225,11 +229,15 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
 {
   global const unsigned char *image = &images[get_global_id(0) * IMG_SIZE];
 
+  printf("begin\n");
+
+  printf("pad\n");
+
   /* input image pad */
   local float conv1_input[CONV1_INPUT];
   input_pad_layer(image, conv1_input,
-      CONV1_INPUT_WIDTH, CONV1_INPUT_HEIGHT, CONV1_INPUT_CHANNELS,
-      2, 2);   
+      IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS,
+      2, 2);
 
   /* CONV LAYER 1 */
   local float maxpool1_input[MAXPOOL1_INPUT];
@@ -239,7 +247,7 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       CONV1_FILTER_WIDTH, CONV1_FILTER_HEIGHT, CONV1_FILTER_CHANNELS);
 
   /* MAXPOOL LAYER */
-  local float maxpool1_output[CONV2_INPUT];
+  local float maxpool1_output[14 * 14 * 32];
   maxpool_layer(
       maxpool1_input, maxpool1_output,
       MAXPOOL1_INPUT_WIDTH, MAXPOOL1_INPUT_HEIGHT, MAXPOOL1_INPUT_CHANNELS,
@@ -248,8 +256,9 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
   /* pad */
   local float conv2_input[CONV2_INPUT];
   pad_layer(maxpool1_output, conv2_input,
-      CONV2_INPUT_WIDTH, CONV2_INPUT_HEIGHT, CONV2_INPUT_CHANNELS,
-      2, 2);
+      14, 14, 32, 2, 2);
+
+  printf("pad1\n");
 
   /* CONV LAYER 2 */
   local float maxpool2_input[MAXPOOL2_INPUT];
@@ -257,6 +266,10 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       conv2_weights, conv2_bias, conv2_input, maxpool2_input, 
       CONV2_INPUT_WIDTH, CONV2_INPUT_HEIGHT, CONV2_INPUT_CHANNELS,
       CONV2_FILTER_WIDTH, CONV2_FILTER_HEIGHT, CONV2_FILTER_CHANNELS);
+
+  for (int i = 0; i < MAXPOOL2_INPUT; i++) {
+    printf("%f ", maxpool2_input[i]);
+  }
 
   /* MAXPOOL LAYER 2 */
   local float dense1_input[DENSE1_INPUT];
@@ -289,6 +302,8 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       guess = i;
     }
   }
+
+  printf("%d\n", guess);
 
   guesses[get_global_id(0)] = guess;
 }
