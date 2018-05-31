@@ -9,6 +9,11 @@
 
 #define IMAGE_INPUT (28 * 28 * 1)
 
+#define CONV1_INPUT_WIDTH 32
+#define CONV1_INPUT_HEIGHT 32
+#define CONV1_INPUT_CHANNELS 1
+#define CONV1_INPUT (32 * 32 * 1)
+
 #define CONV1_FILTER_WIDTH 5
 #define CONV1_FILTER_HEIGHT 5
 #define CONV1_FILTER_CHANNELS 32
@@ -21,6 +26,8 @@
 #define CONV2_INPUT_WIDTH 14
 #define CONV2_INPUT_HEIGHT 14
 #define CONV2_INPUT_CHANNELS 32
+#define CONV2_INPUT (14 * 14 * 32)
+
 #define CONV2_FILTER_WIDTH 5
 #define CONV2_FILTER_HEIGHT 5
 #define CONV2_FILTER_CHANNELS 64
@@ -65,15 +72,15 @@ void maxpool_layer(
         float maxima = -INFINITY;
         for (int ww = 0; ww < pool_width; ww++) {
           for (int hh = 0; hh < pool_height; hh++) {
-            float pixel = inputs[c * input_width * input_height + w * input_width + h + ww 
-                * pool_width + hh];
+            float pixel = inputs[c * input_width * input_height + h * input_width + w + hh 
+                * pool_width + ww];
             if(maxima < pixel) {
               maxima = pixel;
             }
           }
         }
 
-        outputs[output_size * c + output_width * w + h] = maxima;
+        outputs[output_size * c + output_width * h + w] = maxima;
       }
     }  
   }
@@ -98,16 +105,16 @@ void conv_layer(
         for (int c = 0; c < input_channels; c++) {
           for (int ww = 0; ww < filter_width; ww++) {
             for (int hh = 0; hh < filter_height; hh++) {
-              sum += inputs[c * input_width * input_height + w * input_width + h + ww
-                * filter_width + hh] * weights[f * c * filter_width 
-                * filter_height + c * filter_height * filter_width + ww 
-                * filter_width + hh];
+              sum += inputs[c * input_width * input_height + h * input_width + w + hh
+                * filter_width + ww] * weights[f * c * filter_width 
+                * filter_height + c * filter_height * filter_width + hh 
+                * filter_width + ww];
             }
           }
           sum += bias[f * c * filter_width * filter_height + c
             * filter_height * filter_width];
         }
-        outputs[input_width * input_height * f + input_width * w + h] = sum;
+        outputs[input_width * input_height * f + input_width * h + w] = sum;
       }
     }  
   }
@@ -130,14 +137,45 @@ void dense_layer(
     for (int w = 0; w < input_width; w++) {
       for (int h = 0; h < input_height; h++) {
         for (int c = 0; c < input_channels; c++) {
-          float pix = inputs[c * input_size + w * input_width + h];
+          float pix = inputs[c * input_size + h * input_width + w];
           float wgt = weights[x * input_channels * input_size 
-            + c * input_size + w * input_width + h];
+            + c * input_size + h * input_width + w];
           sum += pix * wgt;
         } 
       }
     }  
     outputs[x] = sum + bias[x];
+  }
+}
+
+void input_pad_layer(
+    global const unsigned char * inputs,
+    local float * restrict outputs,
+    const int input_width,
+    const int input_height,
+    const int input_channels,
+    const int pad_width,
+    const int pad_height
+) {
+  const int OW = input_width + pad_width * 2;
+  const int OH = input_height + pad_height * 2;
+  const int OC = OW * OH;
+
+  for (int w = 0; w < OW; w++) {
+    for (int h = 0; h < OH; h++) {
+      for (int c = 0; c < input_channels; c++) {
+        const int o_idx = c * OC + h * OW + w;
+        if (w >= pad_width && h >= pad_height
+            && w < input_width + pad_width 
+            && h < input_height + pad_height) {
+          const int ih = h - pad_height;
+          const int iw = w - pad_width;
+          outputs[o_idx] =  inputs[ih * input_width + iw];
+        } else {
+          outputs[o_idx] = 0;
+        }
+      }
+    }
   }
 }
 
@@ -185,21 +223,13 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
         constant float * restrict dense2_bias,
         global unsigned char * restrict guesses)
 {
-  // The input image
-  const int id = get_global_id(0);
-  local float conv1_input[32 * 32 * 1];
-  for (int w = 0; w < IMG_WIDTH + 2*2; w++) {
-    for (int h = 0; h < IMG_WIDTH + 2*2; h++) {
-      conv1_input[w * 32 + h] = 0;
-    }
-  }
+  global const unsigned char *image = &images[get_global_id(0) * IMG_SIZE];
 
-  for (int w = 0; w < IMG_WIDTH; w++) {
-    for (int h = 0; h < IMG_HEIGHT; h++) {
-      const int padded_idx = (w + 2) * IMG_WIDTH + (h + 2);
-      conv1_input[padded_idx] = images[id * IMG_SIZE + w * IMG_WIDTH + h];
-    }
-  }
+  /* input image pad */
+  local float conv1_input[CONV1_INPUT];
+  input_pad_layer(image, conv1_input,
+      CONV1_INPUT_WIDTH, CONV1_INPUT_HEIGHT, CONV1_INPUT_CHANNELS,
+      2, 2);   
 
   /* CONV LAYER 1 */
   local float maxpool1_input[MAXPOOL1_INPUT];
