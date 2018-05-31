@@ -63,7 +63,7 @@ void maxpool_layer(
 ) {
   const int output_width = input_width / stride_width;
   const int output_height = input_height / stride_height;
-  const int output_size = output_width * output_height;
+  const int output_channels = input_channels;
 
   for (int w = 0; w < input_width; w += stride_width) {
     for (int h = 0; h < input_height; h += stride_height) {
@@ -71,8 +71,8 @@ void maxpool_layer(
         float maxima = -INFINITY;
         for (int ww = 0; ww < pool_width; ww++) {
           for (int hh = 0; hh < pool_height; hh++) {
-            const int idx = (w + ww) * input_channels * input_height 
-              + (h + hh) * input_channels + c;
+            const int idx = (w + ww) * input_channels * input_height +
+              (h + hh) * input_channels + c;
             float pixel = inputs[idx];
             if(maxima < pixel) {
               maxima = pixel;
@@ -80,7 +80,7 @@ void maxpool_layer(
           }
         }
 
-        outputs[w * input_channels * output_height + h * output_channels + c] = maxima;
+        outputs[w * output_channels * output_height + h * output_channels + c] = maxima;
       }
     }  
   }
@@ -272,6 +272,8 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       maxpool1_input, maxpool1_output,
       MAXPOOL1_INPUT_WIDTH, MAXPOOL1_INPUT_HEIGHT, MAXPOOL1_INPUT_CHANNELS,
       2, 2, 2, 2);
+
+  print_buffer("%03.6f, ", maxpool1_output, 14, 14, 32);
 
   /* pad */
   local float conv2_input[CONV2_INPUT];
