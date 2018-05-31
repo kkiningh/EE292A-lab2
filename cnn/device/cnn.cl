@@ -46,6 +46,10 @@
 
 #define SOFTMAX_INPUT 10
 
+float relu(float x) {
+  return (x < 0.) ? 0. : x;
+}
+
 void maxpool_layer(
     local const float * restrict inputs,
     local float * restrict outputs,
@@ -67,14 +71,16 @@ void maxpool_layer(
         float maxima = -INFINITY;
         for (int ww = 0; ww < pool_width; ww++) {
           for (int hh = 0; hh < pool_height; hh++) {
-            float pixel = inputs[c * input_width * input_height + (h + hh) * input_width + w + ww];
+            const int idx = (w + ww) * input_channels * input_height 
+              + (h + hh) * input_channels + c;
+            float pixel = inputs[idx];
             if(maxima < pixel) {
               maxima = pixel;
             }
           }
         }
 
-        outputs[output_size * c + output_width * h + w] = maxima;
+        outputs[w * input_channels * output_height + h * output_channels + c] = maxima;
       }
     }  
   }
@@ -94,23 +100,28 @@ void conv_layer(
 ) {
   const int OW = input_width - filter_width + 1;
   const int OH = input_height - filter_height + 1;
+  const int OC = filter_channels;
 
   for (int w = 0; w < OW; w++) {
     for (int h = 0; h < OH; h++) {
       for (int f = 0; f < filter_channels; f++) {
+        /* Compute the output of a single filter */
         float sum = 0;
         for (int c = 0; c < input_channels; c++) {
           for (int ww = 0; ww < filter_width; ww++) {
             for (int hh = 0; hh < filter_height; hh++) {
-              sum += inputs[c * input_width * input_height + (h + hh) * input_width + w + ww]
-				  * weights[f * input_channels * filter_width 
-                * filter_height + c * filter_height * filter_width + hh 
-                * filter_width + ww];
+              float pix = inputs[
+                (w + ww) * input_height * input_channels + 
+                (h + hh) * input_channels + c];
+              float wgt = weights[
+                ww * filter_height * input_channels * filter_channels +
+                hh * input_channels * filter_channels +
+                c * filter_channels + f];
+              sum += pix * wgt;
             }
           }
         }
-        sum += bias[f];
-        outputs[OW * OH * f + OW * h + w] = sum;
+        outputs[w * OC * OH + h * OC + f] = relu(sum + bias[f]);
       }
     }  
   }
@@ -140,7 +151,7 @@ void dense_layer(
         } 
       }
     }  
-    outputs[x] = sum + bias[x];
+    outputs[x] = relu(sum + bias[x]);
   }
 }
 
@@ -155,18 +166,20 @@ void input_pad_layer(
 ) {
   const int OW = input_width + pad_width * 2;
   const int OH = input_height + pad_height * 2;
-  const int OC = OW * OH;
+  const int OC = input_channels;
 
   for (int w = 0; w < OW; w++) {
     for (int h = 0; h < OH; h++) {
       for (int c = 0; c < input_channels; c++) {
-        const int o_idx = c * OC + h * OW + w;
+        const int o_idx = w * OC * OH + h * OC + c;
         if (w >= pad_width && h >= pad_height
             && w < input_width + pad_width 
             && h < input_height + pad_height) {
           const int ih = h - pad_height;
           const int iw = w - pad_width;
-          outputs[o_idx] =  inputs[c * input_width * input_height + ih * input_width + iw];
+          const int i_idx = iw * input_height * input_channels + ih
+            * input_channels + c;
+          outputs[o_idx] =  inputs[i_idx];
         } else {
           outputs[o_idx] = 0;
         }
@@ -186,24 +199,37 @@ void pad_layer(
 ) {
   const int OW = input_width + pad_width * 2;
   const int OH = input_height + pad_height * 2;
-  const int OC = OW * OH;
+  const int OC = input_channels;
 
   for (int w = 0; w < OW; w++) {
     for (int h = 0; h < OH; h++) {
       for (int c = 0; c < input_channels; c++) {
-        const int o_idx = c * OC + h * OW + w;
+        const int o_idx = w * OC * OH + h * OC + c;
         if (w >= pad_width && h >= pad_height
             && w < input_width + pad_width 
             && h < input_height + pad_height) {
           const int ih = h - pad_height;
           const int iw = w - pad_width;
-          const int i_idx = c * input_width * input_height + ih * input_width + iw;
+          const int i_idx = iw * input_height * input_channels + ih
+            * input_channels + c;
           outputs[o_idx] =  inputs[i_idx];
         } else {
           outputs[o_idx] = 0;
         }
       }
     }
+  }
+}
+
+void print_buffer(const char* fmt, local const float * restrict buffer,
+    const int width, const int height, const int channels) {
+  for (int w = 0; w < width; w++) {
+    for (int h = 0; h < height; h++) {
+      for (int c = 0; c < 1; c++) {
+        printf(fmt, buffer[w * height * channels + h * channels + c]);
+      }
+    }
+    printf("\n");
   }
 }
 
@@ -220,7 +246,7 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
         constant float * restrict dense2_bias,
         global unsigned char * restrict guesses)
 {
-  global const unsigned char *image = &images[get_global_id(0) * IMG_SIZE];
+  global const unsigned char * image = &images[get_global_id(0) * IMG_SIZE];
 
   /* input image pad */
   local float conv1_input[CONV1_INPUT];
@@ -228,12 +254,17 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS,
       2, 2);
 
+  printf("input image\n");
+  print_buffer("%03.0f, ", conv1_input, 32, 32, 1);
+
   /* CONV LAYER 1 */
   local float maxpool1_input[MAXPOOL1_INPUT];
   conv_layer(
       conv1_weights, conv1_bias, conv1_input, maxpool1_input, 
       CONV1_INPUT_WIDTH, CONV1_INPUT_HEIGHT, CONV1_INPUT_CHANNELS,
       CONV1_FILTER_WIDTH, CONV1_FILTER_HEIGHT, CONV1_FILTER_CHANNELS);
+
+  print_buffer("%03.3f, ", maxpool1_input, 28, 28, 32);
 
   /* MAXPOOL LAYER */
   local float maxpool1_output[14 * 14 * 32];
@@ -288,6 +319,7 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
     }
   }
 
+  printf("%d\n", guess);
 
   guesses[get_global_id(0)] = guess;
 }

@@ -1,6 +1,6 @@
 #define NOMINMAX // so that windows.h does not define min/max macros
 
-#include <algorithm>
+#include <algorithm> 
 #include <iostream>
 #include <fstream>
 // #include <time.h>
@@ -156,7 +156,13 @@ int main(int argc, char **argv) {
    
   int correct = 0;
   for (unsigned i = 0; i < n_items; i++){
-    if (output_guesses[i] == reference_guesses[i]) correct++;
+    if (output_guesses[i] == reference_guesses[i]) {
+      correct++;
+    } else {
+      std::cout 
+        << "Correct: " << (int)reference_guesses[i] 
+        << " Guess: " << (int)output_guesses[i] << std::endl;
+    }
   }
   printf("Classifier accuracy: %.2f%%\n", (float)correct*100/n_items);
   
