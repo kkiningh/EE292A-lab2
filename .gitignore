@@ -2,3 +2,4 @@ cnn/bin/cnn_emu/
 cnn/bin/*.aoco
 cnn/bin/*.aocx
 cnn/bin/host
+*.swp
