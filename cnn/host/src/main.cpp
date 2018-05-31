@@ -61,18 +61,22 @@ void cleanup();
 void teardown(int exit_status = 1);
 
 bool read_weights(const char *filename, float *weights, size_t count) {
-  FILE *f = fopen(filename, "rb");
-  if (f == NULL){
-    printf("ERROR: could not open %s\n",filename);
-    return false;
+  std::ifstream f;
+
+  f.open(filename);
+  if (!f) {
+    std::cout << "ERROR: could not open weight file '" << filename << "'" << std::endl;
   }
-  int read_elements = fread(weights, sizeof(float), count, f);
-  fclose(f);
-  
-  if (read_elements != count){
-    printf("ERROR: read incorrect number of weights from %s\n", filename);
-    return false;
+
+  for (int i = 0; i < count; i++) {
+    if (!f) {
+      std::cout << "ERROR: could not read weight " << i << " from " << filename << std::endl;
+      return false;
+    }
+
+    f >> weights[i];
   }
+
   return true;
 }
 
