@@ -80,7 +80,7 @@ void maxpool_layer(
           }
         }
 
-        outputs[w * output_channels * output_height + h * output_channels + c] = maxima;
+        outputs[w/2 * output_channels * output_height + h/2 * output_channels + c] = maxima;
       }
     }  
   }
@@ -144,9 +144,11 @@ void dense_layer(
     for (int w = 0; w < input_width; w++) {
       for (int h = 0; h < input_height; h++) {
         for (int c = 0; c < input_channels; c++) {
-          float pix = inputs[c * input_size + h * input_width + w];
-          float wgt = weights[x * input_channels * input_size 
-            + c * input_size + h * input_width + w];
+          float pix = inputs[w * input_height * input_channels
+			  + h * input_channels + c];
+          float wgt = weights[w * input_channels * output_size 
+            + h * input_channels * output_size + c * output_size
+		   	+ x];
           sum += pix * wgt;
         } 
       }
@@ -254,17 +256,12 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS,
       2, 2);
 
-  printf("input image\n");
-  print_buffer("%03.0f, ", conv1_input, 32, 32, 1);
-
   /* CONV LAYER 1 */
   local float maxpool1_input[MAXPOOL1_INPUT];
   conv_layer(
       conv1_weights, conv1_bias, conv1_input, maxpool1_input, 
       CONV1_INPUT_WIDTH, CONV1_INPUT_HEIGHT, CONV1_INPUT_CHANNELS,
       CONV1_FILTER_WIDTH, CONV1_FILTER_HEIGHT, CONV1_FILTER_CHANNELS);
-
-  print_buffer("%03.3f, ", maxpool1_input, 28, 28, 32);
 
   /* MAXPOOL LAYER */
   local float maxpool1_output[14 * 14 * 32];
@@ -273,13 +270,13 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       MAXPOOL1_INPUT_WIDTH, MAXPOOL1_INPUT_HEIGHT, MAXPOOL1_INPUT_CHANNELS,
       2, 2, 2, 2);
 
-  print_buffer("%03.6f, ", maxpool1_output, 14, 14, 32);
-
   /* pad */
   local float conv2_input[CONV2_INPUT];
   pad_layer(maxpool1_output, conv2_input,
       14, 14, 32, 2, 2);
 
+  print_buffer("%03.6f, ", conv2_input, 18, 18, 32);
+  
   /* CONV LAYER 2 */
   local float maxpool2_input[MAXPOOL2_INPUT];
   conv_layer(
@@ -287,6 +284,8 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       CONV2_INPUT_WIDTH, CONV2_INPUT_HEIGHT, CONV2_INPUT_CHANNELS,
       CONV2_FILTER_WIDTH, CONV2_FILTER_HEIGHT, CONV2_FILTER_CHANNELS);
 
+  print_buffer("%03.2f, ", maxpool2_input, 14, 14, 64);
+  
   /* MAXPOOL LAYER 2 */
   local float dense1_input[DENSE1_INPUT];
   maxpool_layer(
