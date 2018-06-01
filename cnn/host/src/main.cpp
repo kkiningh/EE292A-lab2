@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
   }
 
   // TODO: Uncomment this to verify on a smaller set of examples
-  n_items = 1;
+  n_items = 100;
   
   // Initializing OpenCL and the kernels.
   output_guesses = (cl_uchar*)alignedMalloc(sizeof(cl_uchar) * n_items);

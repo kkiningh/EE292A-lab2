@@ -80,7 +80,9 @@ void maxpool_layer(
           }
         }
 
-        outputs[w/2 * output_channels * output_height + h/2 * output_channels + c] = maxima;
+        const int o_idx = (w / stride_width) * output_channels * output_height + 
+          (h / stride_height) * output_channels + c;
+        outputs[o_idx] = maxima;
       }
     }  
   }
@@ -102,9 +104,9 @@ void conv_layer(
   const int OH = input_height - filter_height + 1;
   const int OC = filter_channels;
 
-  for (int w = 0; w < OW; w++) {
+  for (int f = 0; f < filter_channels; f++) {
     for (int h = 0; h < OH; h++) {
-      for (int f = 0; f < filter_channels; f++) {
+      for (int w = 0; w < OW; w++) {
         /* Compute the output of a single filter */
         float sum = 0;
         for (int c = 0; c < input_channels; c++) {
@@ -135,7 +137,8 @@ void dense_layer(
     const int input_width,
     const int input_height,
     const int input_channels,
-    const int output_size
+    const int output_size,
+    bool use_relu
 ) {
   const int input_size = input_width * input_height;
 
@@ -144,16 +147,23 @@ void dense_layer(
     for (int w = 0; w < input_width; w++) {
       for (int h = 0; h < input_height; h++) {
         for (int c = 0; c < input_channels; c++) {
-          float pix = inputs[w * input_height * input_channels
-			  + h * input_channels + c];
-          float wgt = weights[w * input_channels * output_size 
-            + h * input_channels * output_size + c * output_size
-		   	+ x];
+          float pix = inputs[
+            w * input_height * input_channels +
+            h * input_channels + c];
+          float wgt = weights[
+            w * input_height * input_channels * output_size + 
+            h * input_channels * output_size + 
+            c * output_size + x];
           sum += pix * wgt;
         } 
       }
-    }  
-    outputs[x] = relu(sum + bias[x]);
+    }
+    float activation = sum + bias[x];
+    if (use_relu) {
+      outputs[x] = relu(activation);
+    } else {
+      outputs[x] = activation;
+    }
   }
 }
 
@@ -236,7 +246,7 @@ void print_buffer(const char* fmt, local const float * restrict buffer,
 }
 
 // first argument
-__attribute__((reqd_work_group_size(1,1,1))) // change this to change workgroup size
+__attribute__((reqd_work_group_size(100,1,1))) // change this to change workgroup size
 __kernel void linear_classifier(global const unsigned char * restrict images, 
         constant float * restrict conv1_weights,
         constant float * restrict conv1_bias,
@@ -275,16 +285,16 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
   pad_layer(maxpool1_output, conv2_input,
       14, 14, 32, 2, 2);
 
-  print_buffer("%03.6f, ", conv2_input, 18, 18, 32);
+  //print_buffer("%09.6f, ", conv2_input, 18, 18, 32);
   
   /* CONV LAYER 2 */
   local float maxpool2_input[MAXPOOL2_INPUT];
   conv_layer(
       conv2_weights, conv2_bias, conv2_input, maxpool2_input, 
-      CONV2_INPUT_WIDTH, CONV2_INPUT_HEIGHT, CONV2_INPUT_CHANNELS,
-      CONV2_FILTER_WIDTH, CONV2_FILTER_HEIGHT, CONV2_FILTER_CHANNELS);
+      18, 18, 32,
+      5, 5, 64);
 
-  print_buffer("%03.2f, ", maxpool2_input, 14, 14, 64);
+  //print_buffer("%06.2f, ", maxpool2_input, 14, 14, 64);
   
   /* MAXPOOL LAYER 2 */
   local float dense1_input[DENSE1_INPUT];
@@ -293,21 +303,21 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       MAXPOOL2_INPUT_WIDTH, MAXPOOL2_INPUT_HEIGHT, MAXPOOL2_INPUT_CHANNELS,
       2, 2, 2, 2);
   
+  //print_buffer("%06.2f, ", maxpool2_input, 7, 7, 64);
+
   /* DENSE LAYER 1 */
   local float dense2_input[DENSE2_INPUT];
   dense_layer(
       dense1_weights, dense1_bias, dense1_input, dense2_input,
       DENSE1_INPUT_WIDTH, DENSE1_INPUT_HEIGHT, DENSE1_INPUT_CHANNELS,
-      DENSE2_INPUT);
+      DENSE2_INPUT, true);
   
-
   /* DENSE LAYER 2 */
   local float softmax_input[SOFTMAX_INPUT];
   dense_layer(
       dense2_weights, dense2_bias, dense2_input, softmax_input,
       DENSE2_INPUT_WIDTH, DENSE2_INPUT_HEIGHT, DENSE2_INPUT_CHANNELS,
-      SOFTMAX_INPUT);
-    
+      SOFTMAX_INPUT, false);
 
   /* FINAL GUESS */
   float maximum = -INFINITY;
@@ -319,8 +329,6 @@ __kernel void linear_classifier(global const unsigned char * restrict images,
       guess = i;
     }
   }
-
-  printf("%d\n", guess);
 
   guesses[get_global_id(0)] = guess;
 }
